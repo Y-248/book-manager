@@ -70,6 +70,39 @@ class AuthorRepositoryImpl(
         )
     }
 
+    /**
+     * 複数著者を1本のINSERT文（マルチVALUES + RETURNING）でまとめて登録する。
+     * jOOQのbatchInsert()はJDBCバッチ実行になり生成されたid等を確実に取得できないため、
+     * 生成列を返す必要があるここでは複数行RETURNINGが取れるマルチVALUES方式を使っている
+     * （生成列が不要なbook_author_relationsの登録ではbatchInsert()を使用: BookRepositoryImpl参照）。
+     */
+    override fun saveAll(authors: List<Author>): List<Author> {
+        if (authors.isEmpty()) return emptyList()
+
+        var insert = dsl.insertInto(AUTHORS, AUTHORS.NAME, AUTHORS.BIRTH_DATE)
+            .values(authors[0].name, authors[0].birthDate)
+        for (author in authors.drop(1)) {
+            insert = insert.values(author.name, author.birthDate)
+        }
+
+        val records = try {
+            insert.returning(AUTHORS.ID, AUTHORS.NAME, AUTHORS.BIRTH_DATE, AUTHORS.CREATED_AT, AUTHORS.UPDATED_AT)
+                .fetch()
+        } catch (e: DuplicateKeyException) {
+            throw DuplicateAuthorException(authors.joinToString(prefix = "[", postfix = "]") { "${it.name}/${it.birthDate}" })
+        }
+
+        return records.map { record ->
+            Author.reconstruct(
+                id = AuthorId(requireNotNull(record.get(AUTHORS.ID))),
+                name = requireNotNull(record.get(AUTHORS.NAME)),
+                birthDate = requireNotNull(record.get(AUTHORS.BIRTH_DATE)),
+                createdAt = requireNotNull(record.get(AUTHORS.CREATED_AT)),
+                updatedAt = requireNotNull(record.get(AUTHORS.UPDATED_AT)),
+            )
+        }
+    }
+
     override fun update(author: Author): Author {
         val id = requireNotNull(author.id) { "author id must not be null when updating" }
         val record = try {

@@ -14,5 +14,10 @@ interface AuthorRepository {
 
     fun save(author: Author): Author
 
+    /**
+     * 複数の新規著者を1回のバルクインサートで登録する（書籍登録APIで新規著者が複数指定された場合に使用）。
+     */
+    fun saveAll(authors: List<Author>): List<Author>
+
     fun update(author: Author): Author
 }
