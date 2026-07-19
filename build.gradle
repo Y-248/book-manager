@@ -1,8 +1,19 @@
+buildscript {
+	repositories {
+		mavenCentral()
+	}
+	dependencies {
+		classpath 'org.flywaydb:flyway-database-postgresql:12.4.0'
+	}
+}
+
 plugins {
 	id 'org.jetbrains.kotlin.jvm' version '2.3.21'
 	id 'org.jetbrains.kotlin.plugin.spring' version '2.3.21'
 	id 'org.springframework.boot' version '4.1.0'
 	id 'io.spring.dependency-management' version '1.1.7'
+	id 'org.jooq.jooq-codegen-gradle' version '3.21.5'
+	id 'org.flywaydb.flyway' version '12.4.0'
 }
 
 group = 'com.github.y248'
@@ -38,12 +49,69 @@ dependencies {
 	testCompileOnly 'org.projectlombok:lombok'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 	testAnnotationProcessor 'org.projectlombok:lombok'
+	jooqCodegen 'org.postgresql:postgresql:42.7.11'
 }
 
 kotlin {
 	compilerOptions {
 		freeCompilerArgs.addAll '-Xjsr305=strict', '-Xannotation-default-target=param-property'
 	}
+}
+
+sourceSets {
+	main {
+		kotlin {
+			srcDir 'build/generated-sources/jooq'
+		}
+	}
+}
+
+// ローカル開発用DB（compose.yamlのpostgresサービスと同じ接続情報）。
+// flywayMigrate/jooqCodegenはGradleタスクとしてJDBCで直接つなぎに行くため、
+// 事前に `docker compose up -d` 等でこのDBが起動している必要がある。
+def devDbUrl = 'jdbc:postgresql://localhost:5432/mydatabase'
+def devDbUser = 'myuser'
+def devDbPassword = 'secret'
+
+flyway {
+	driver = 'org.postgresql.Driver'
+	url = devDbUrl
+	user = devDbUser
+	password = devDbPassword
+	locations = ['filesystem:src/main/resources/db/migration']
+	cleanDisabled = true
+}
+
+jooq {
+	configuration {
+		jdbc {
+			driver = 'org.postgresql.Driver'
+			url = devDbUrl
+			user = devDbUser
+			password = devDbPassword
+		}
+		generator {
+			name = 'org.jooq.codegen.KotlinGenerator'
+			database {
+				name = 'org.jooq.meta.postgres.PostgresDatabase'
+				inputSchema = 'public'
+				excludes = 'flyway_schema_history'
+			}
+			target {
+				packageName = 'com.github.y248.book_manager.jooq'
+				directory = 'build/generated-sources/jooq'
+			}
+		}
+	}
+}
+
+tasks.named('jooqCodegen') {
+	dependsOn(tasks.named('flywayMigrate'))
+	inputs.files(fileTree('src/main/resources/db/migration'))
+}
+
+tasks.named('compileKotlin') {
+	dependsOn(tasks.named('jooqCodegen'))
 }
 
 tasks.named('test') {
