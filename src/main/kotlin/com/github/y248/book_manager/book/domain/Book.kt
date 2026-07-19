@@ -13,6 +13,30 @@ class Book private constructor(
     val createdAt: OffsetDateTime?,
     val updatedAt: OffsetDateTime?,
 ) {
+    /**
+     * 書籍情報を更新する。指定しなかった項目は現在の値を維持する（PATCHセマンティクス）。
+     * authorIdsを指定した場合は紐付けをそのリストの内容で完全に置き換える（未指定の場合は現在の紐付けを維持）。
+     */
+    fun update(
+        title: String? = null,
+        price: BigDecimal? = null,
+        publicationStatus: PublicationStatus? = null,
+        authorIds: List<AuthorId>? = null,
+    ): Book {
+        requireNotNull(id) { "cannot update a book that has not been persisted yet" }
+        val newTitle = title ?: this.title
+        val newPrice = price ?: this.price
+        val newPublicationStatus = publicationStatus ?: this.publicationStatus
+        val newAuthorIds = authorIds ?: this.authorIds
+
+        if (this.publicationStatus == PublicationStatus.PUBLISHED && newPublicationStatus == PublicationStatus.UNPUBLISHED) {
+            throw InvalidPublicationStatusTransitionException(this.publicationStatus, newPublicationStatus)
+        }
+        validate(newTitle, newPrice, newAuthorIds)
+
+        return Book(id, newTitle, newPrice, newPublicationStatus, newAuthorIds, createdAt, updatedAt)
+    }
+
     companion object {
         private const val MAX_TITLE_LENGTH = 255
 
