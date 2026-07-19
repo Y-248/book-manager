@@ -23,7 +23,7 @@ class BookUpdateService(
         price: BigDecimal?,
         publicationStatus: PublicationStatus?,
         authorSpecs: List<AuthorSpec>?,
-    ): RegisteredBook {
+    ): BookWithAuthors {
         val existing = bookRepository.findById(id) ?: throw BookNotFoundException(id)
 
         // authorSpecsが指定された場合のみ著者を解決する（指定時は紐付けを完全に置き換え、未指定時は現在の紐付けを維持）。
@@ -38,6 +38,6 @@ class BookUpdateService(
         val savedBook = bookRepository.update(updated)
 
         val resultAuthors = authors ?: authorRepository.findAllByIds(existing.authorIds)
-        return RegisteredBook(savedBook, resultAuthors)
+        return BookWithAuthors(savedBook, resultAuthors)
     }
 }

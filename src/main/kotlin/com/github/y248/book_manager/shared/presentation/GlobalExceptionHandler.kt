@@ -8,8 +8,10 @@ import jakarta.servlet.http.HttpServletRequest
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.MethodArgumentNotValidException
+import org.springframework.web.bind.MissingServletRequestParameterException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException
 
 @RestControllerAdvice
 class GlobalExceptionHandler {
@@ -86,6 +88,42 @@ class GlobalExceptionHandler {
             path = request.requestURI,
         )
         return ResponseEntity.status(HttpStatus.CONFLICT).body(body)
+    }
+
+    /**
+     * @RequestParamに必須パラメータ（例: authorId）が指定されなかった場合。
+     */
+    @ExceptionHandler(MissingServletRequestParameterException::class)
+    fun handleMissingServletRequestParameter(
+        exception: MissingServletRequestParameterException,
+        request: HttpServletRequest,
+    ): ResponseEntity<ErrorResponse> {
+        val body = ErrorResponse(
+            status = HttpStatus.BAD_REQUEST.value(),
+            error = HttpStatus.BAD_REQUEST.reasonPhrase,
+            message = "${exception.parameterName} must not be null",
+            path = request.requestURI,
+            errors = listOf(ErrorResponse.FieldError(field = exception.parameterName, message = "must not be null")),
+        )
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body)
+    }
+
+    /**
+     * @RequestParamに型変換できない値（例: authorIdに数値以外）が指定された場合。
+     */
+    @ExceptionHandler(MethodArgumentTypeMismatchException::class)
+    fun handleMethodArgumentTypeMismatch(
+        exception: MethodArgumentTypeMismatchException,
+        request: HttpServletRequest,
+    ): ResponseEntity<ErrorResponse> {
+        val body = ErrorResponse(
+            status = HttpStatus.BAD_REQUEST.value(),
+            error = HttpStatus.BAD_REQUEST.reasonPhrase,
+            message = "${exception.name} has an invalid value",
+            path = request.requestURI,
+            errors = listOf(ErrorResponse.FieldError(field = exception.name, message = "has an invalid value")),
+        )
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body)
     }
 
     /**
