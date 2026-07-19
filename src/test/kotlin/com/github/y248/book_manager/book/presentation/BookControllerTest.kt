@@ -6,8 +6,9 @@ import com.github.y248.book_manager.author.domain.AuthorNotFoundException
 import com.github.y248.book_manager.author.domain.DuplicateAuthorException
 import com.github.y248.book_manager.book.application.AuthorSpec
 import com.github.y248.book_manager.book.application.BookRegistrationService
+import com.github.y248.book_manager.book.application.BookSearchService
 import com.github.y248.book_manager.book.application.BookUpdateService
-import com.github.y248.book_manager.book.application.RegisteredBook
+import com.github.y248.book_manager.book.application.BookWithAuthors
 import com.github.y248.book_manager.book.domain.Book
 import com.github.y248.book_manager.book.domain.BookId
 import com.github.y248.book_manager.book.domain.BookNotFoundException
@@ -23,6 +24,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest
 import org.springframework.http.MediaType
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
@@ -43,6 +45,9 @@ class BookControllerTest {
 
     @MockitoBean
     private lateinit var bookUpdateService: BookUpdateService
+
+    @MockitoBean
+    private lateinit var bookSearchService: BookSearchService
 
     @Nested
     @DisplayName("POST /api/v1/booksは書籍登録リクエストを受け付け、バリデーション結果や登録結果に応じたレスポンスを返す")
@@ -74,7 +79,7 @@ class BookControllerTest {
                     publicationStatus = PublicationStatus.UNPUBLISHED,
                     authorSpecs = listOf(AuthorSpec.Existing(AuthorId(1L))),
                 )
-            ).thenReturn(RegisteredBook(book, listOf(author)))
+            ).thenReturn(BookWithAuthors(book, listOf(author)))
 
             mockMvc.perform(
                 post("/api/v1/books")
@@ -302,7 +307,7 @@ class BookControllerTest {
                     publicationStatus = PublicationStatus.PUBLISHED,
                     authorSpecs = listOf(AuthorSpec.Existing(AuthorId(2L))),
                 )
-            ).thenReturn(RegisteredBook(updatedBook, listOf(newAuthor)))
+            ).thenReturn(BookWithAuthors(updatedBook, listOf(newAuthor)))
 
             mockMvc.perform(
                 patch("/api/v1/books/10")
@@ -503,6 +508,70 @@ class BookControllerTest {
                     .content("""{"publicationStatus":"UNPUBLISHED"}""")
             )
                 .andExpect(status().isConflict)
+        }
+    }
+
+    @Nested
+    @DisplayName("GET /api/v1/books?authorId={authorId}は指定した著者に紐づく書籍一覧を返す")
+    inner class Search {
+
+        @Test
+        @DisplayName("紐づく書籍が存在する場合、200 OKと書籍一覧（各書籍の著者情報を含む）を返す")
+        fun `search returns 200 with books linked to the author`() {
+            val author = Author.reconstruct(
+                id = AuthorId(1L),
+                name = "夏目漱石",
+                birthDate = LocalDate.of(1867, 2, 9),
+                createdAt = OffsetDateTime.parse("2026-01-01T00:00:00+09:00"),
+                updatedAt = OffsetDateTime.parse("2026-01-01T00:00:00+09:00"),
+            )
+            val book = Book.reconstruct(
+                id = BookId(10L),
+                title = "こころ",
+                price = BigDecimal("550.00"),
+                publicationStatus = PublicationStatus.PUBLISHED,
+                authorIds = listOf(AuthorId(1L)),
+                createdAt = OffsetDateTime.parse("2026-01-01T00:00:00+09:00"),
+                updatedAt = OffsetDateTime.parse("2026-01-01T00:00:00+09:00"),
+            )
+            `when`(bookSearchService.findByAuthorId(AuthorId(1L))).thenReturn(listOf(BookWithAuthors(book, listOf(author))))
+
+            mockMvc.perform(get("/api/v1/books").param("authorId", "1"))
+                .andExpect(status().isOk)
+                .andExpect(jsonPath("$.books[0].id").value(10))
+                .andExpect(jsonPath("$.books[0].title").value("こころ"))
+                .andExpect(jsonPath("$.books[0].authors[0].id").value(1))
+                .andExpect(jsonPath("$.books[0].authors[0].name").value("夏目漱石"))
+        }
+
+        @Test
+        @DisplayName("紐づく書籍が存在しない場合、200 OKと空のbooksを返す（著者が存在しない場合も同様）")
+        fun `search returns 200 with an empty list when there are no linked books`() {
+            `when`(bookSearchService.findByAuthorId(AuthorId(999L))).thenReturn(emptyList())
+
+            mockMvc.perform(get("/api/v1/books").param("authorId", "999"))
+                .andExpect(status().isOk)
+                .andExpect(jsonPath("$.books").isEmpty)
+        }
+
+        @Test
+        @DisplayName("authorIdを指定しない場合、400 Bad Requestを返す")
+        fun `search returns 400 when authorId is not given`() {
+            mockMvc.perform(get("/api/v1/books"))
+                .andExpect(status().isBadRequest)
+                .andExpect(jsonPath("$.errors[0].field").value("authorId"))
+
+            verifyNoInteractions(bookSearchService)
+        }
+
+        @Test
+        @DisplayName("authorIdが数値以外の場合、400 Bad Requestを返す")
+        fun `search returns 400 when authorId is not a number`() {
+            mockMvc.perform(get("/api/v1/books").param("authorId", "abc"))
+                .andExpect(status().isBadRequest)
+                .andExpect(jsonPath("$.errors[0].field").value("authorId"))
+
+            verifyNoInteractions(bookSearchService)
         }
     }
 }
