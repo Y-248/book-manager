@@ -12,6 +12,11 @@ interface AuthorRepository {
 
     fun findById(id: AuthorId): Author?
 
+    /**
+     * 指定したid群に該当する著者をまとめて取得する（書籍更新APIで著者紐付けを変更しなかった場合のレスポンス構築に使用）。
+     */
+    fun findAllByIds(ids: List<AuthorId>): List<Author>
+
     fun save(author: Author): Author
 
     /**

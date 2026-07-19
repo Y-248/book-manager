@@ -2,6 +2,8 @@ package com.github.y248.book_manager.shared.presentation
 
 import com.github.y248.book_manager.author.domain.AuthorNotFoundException
 import com.github.y248.book_manager.author.domain.DuplicateAuthorException
+import com.github.y248.book_manager.book.domain.BookNotFoundException
+import com.github.y248.book_manager.book.domain.InvalidPublicationStatusTransitionException
 import jakarta.servlet.http.HttpServletRequest
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -56,6 +58,34 @@ class GlobalExceptionHandler {
             path = request.requestURI,
         )
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body)
+    }
+
+    @ExceptionHandler(BookNotFoundException::class)
+    fun handleBookNotFound(
+        exception: BookNotFoundException,
+        request: HttpServletRequest,
+    ): ResponseEntity<ErrorResponse> {
+        val body = ErrorResponse(
+            status = HttpStatus.NOT_FOUND.value(),
+            error = HttpStatus.NOT_FOUND.reasonPhrase,
+            message = exception.message ?: "Not Found",
+            path = request.requestURI,
+        )
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body)
+    }
+
+    @ExceptionHandler(InvalidPublicationStatusTransitionException::class)
+    fun handleInvalidPublicationStatusTransition(
+        exception: InvalidPublicationStatusTransitionException,
+        request: HttpServletRequest,
+    ): ResponseEntity<ErrorResponse> {
+        val body = ErrorResponse(
+            status = HttpStatus.CONFLICT.value(),
+            error = HttpStatus.CONFLICT.reasonPhrase,
+            message = exception.message ?: "Conflict",
+            path = request.requestURI,
+        )
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body)
     }
 
     /**

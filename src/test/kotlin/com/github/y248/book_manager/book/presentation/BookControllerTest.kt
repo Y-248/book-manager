@@ -6,9 +6,12 @@ import com.github.y248.book_manager.author.domain.AuthorNotFoundException
 import com.github.y248.book_manager.author.domain.DuplicateAuthorException
 import com.github.y248.book_manager.book.application.AuthorSpec
 import com.github.y248.book_manager.book.application.BookRegistrationService
+import com.github.y248.book_manager.book.application.BookUpdateService
 import com.github.y248.book_manager.book.application.RegisteredBook
 import com.github.y248.book_manager.book.domain.Book
 import com.github.y248.book_manager.book.domain.BookId
+import com.github.y248.book_manager.book.domain.BookNotFoundException
+import com.github.y248.book_manager.book.domain.InvalidPublicationStatusTransitionException
 import com.github.y248.book_manager.book.domain.PublicationStatus
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
@@ -20,6 +23,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest
 import org.springframework.http.MediaType
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
@@ -36,6 +40,9 @@ class BookControllerTest {
 
     @MockitoBean
     private lateinit var bookRegistrationService: BookRegistrationService
+
+    @MockitoBean
+    private lateinit var bookUpdateService: BookUpdateService
 
     @Nested
     @DisplayName("POST /api/v1/booksは書籍登録リクエストを受け付け、バリデーション結果や登録結果に応じたレスポンスを返す")
@@ -259,6 +266,241 @@ class BookControllerTest {
                     .content(
                         """{"title":"テスト書籍","price":1000,"authors":[{"name":"夏目漱石","birthDate":"1867-02-09"}]}"""
                     )
+            )
+                .andExpect(status().isConflict)
+        }
+    }
+
+    @Nested
+    @DisplayName("PATCH /api/v1/books/{bookId}は書籍更新リクエストを受け付け、バリデーション結果や更新結果に応じたレスポンスを返す")
+    inner class Update {
+
+        @Test
+        @DisplayName("正常なリクエストの場合、書籍を更新して200 OKと更新後の内容（著者情報を含む）を返す")
+        fun `update returns 200 with the updated book`() {
+            val newAuthor = Author.reconstruct(
+                id = AuthorId(2L),
+                name = "森鴎外",
+                birthDate = LocalDate.of(1862, 2, 17),
+                createdAt = OffsetDateTime.parse("2026-01-01T00:00:00+09:00"),
+                updatedAt = OffsetDateTime.parse("2026-01-01T00:00:00+09:00"),
+            )
+            val updatedBook = Book.reconstruct(
+                id = BookId(10L),
+                title = "吾輩は猫である（改訂版）",
+                price = BigDecimal("1500.00"),
+                publicationStatus = PublicationStatus.PUBLISHED,
+                authorIds = listOf(AuthorId(2L)),
+                createdAt = OffsetDateTime.parse("2026-01-01T00:00:00+09:00"),
+                updatedAt = OffsetDateTime.parse("2026-07-20T00:00:00+09:00"),
+            )
+            `when`(
+                bookUpdateService.update(
+                    id = BookId(10L),
+                    title = "吾輩は猫である（改訂版）",
+                    price = BigDecimal("1500"),
+                    publicationStatus = PublicationStatus.PUBLISHED,
+                    authorSpecs = listOf(AuthorSpec.Existing(AuthorId(2L))),
+                )
+            ).thenReturn(RegisteredBook(updatedBook, listOf(newAuthor)))
+
+            mockMvc.perform(
+                patch("/api/v1/books/10")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        """{"title":"吾輩は猫である（改訂版）","price":1500,"publicationStatus":"PUBLISHED","authors":[{"authorId":2}]}"""
+                    )
+            )
+                .andExpect(status().isOk)
+                .andExpect(jsonPath("$.title").value("吾輩は猫である（改訂版）"))
+                .andExpect(jsonPath("$.publicationStatus").value("PUBLISHED"))
+                .andExpect(jsonPath("$.authors[0].id").value(2))
+                .andExpect(jsonPath("$.authors[0].name").value("森鴎外"))
+        }
+
+        @Test
+        @DisplayName("titleが255文字を超える場合、書籍更新は行わず400 Bad Requestとtitleのバリデーションエラーを返す")
+        fun `update returns 400 when title is longer than 255 characters`() {
+            val tooLongTitle = "a".repeat(256)
+
+            mockMvc.perform(
+                patch("/api/v1/books/10")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"title":"$tooLongTitle"}""")
+            )
+                .andExpect(status().isBadRequest)
+                .andExpect(jsonPath("$.errors[0].field").value("title"))
+
+            verifyNoInteractions(bookUpdateService)
+        }
+
+        @Test
+        @DisplayName("priceが負の値の場合、書籍更新は行わず400 Bad Requestとpriceのバリデーションエラーを返す")
+        fun `update returns 400 when price is negative`() {
+            mockMvc.perform(
+                patch("/api/v1/books/10")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"price":-1}""")
+            )
+                .andExpect(status().isBadRequest)
+                .andExpect(jsonPath("$.errors[0].field").value("price"))
+
+            verifyNoInteractions(bookUpdateService)
+        }
+
+        @Test
+        @DisplayName("publicationStatusがUNPUBLISHED・PUBLISHED以外の場合、書籍更新は行わず400 Bad RequestとpublicationStatusのバリデーションエラーを返す")
+        fun `update returns 400 when publicationStatus is invalid`() {
+            mockMvc.perform(
+                patch("/api/v1/books/10")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"publicationStatus":"FOO"}""")
+            )
+                .andExpect(status().isBadRequest)
+                .andExpect(jsonPath("$.errors[0].field").value("publicationStatus"))
+
+            verifyNoInteractions(bookUpdateService)
+        }
+
+        @Test
+        @DisplayName("authorsに空配列を指定した場合、書籍更新は行わず400 Bad Requestとauthorsのバリデーションエラーを返す")
+        fun `update returns 400 when authors is an empty array`() {
+            mockMvc.perform(
+                patch("/api/v1/books/10")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"authors":[]}""")
+            )
+                .andExpect(status().isBadRequest)
+                .andExpect(jsonPath("$.errors[0].field").value("authors"))
+
+            verifyNoInteractions(bookUpdateService)
+        }
+
+        @Test
+        @DisplayName("新規著者のnameが255文字を超える場合、書籍更新は行わず400 Bad Requestとauthors[0].nameのバリデーションエラーを返す")
+        fun `update returns 400 when a new author's name is longer than 255 characters`() {
+            val tooLongName = "a".repeat(256)
+
+            mockMvc.perform(
+                patch("/api/v1/books/10")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"authors":[{"name":"$tooLongName","birthDate":"2000-01-01"}]}""")
+            )
+                .andExpect(status().isBadRequest)
+                .andExpect(jsonPath("$.errors[0].field").value("authors[0].name"))
+
+            verifyNoInteractions(bookUpdateService)
+        }
+
+        @Test
+        @DisplayName("新規著者のbirthDateが未来日の場合、書籍更新は行わず400 Bad Requestとauthors[0].birthDateのバリデーションエラーを返す")
+        fun `update returns 400 when a new author's birthDate is in the future`() {
+            val tomorrow = LocalDate.now().plusDays(1)
+
+            mockMvc.perform(
+                patch("/api/v1/books/10")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"authors":[{"name":"テスト太郎","birthDate":"$tomorrow"}]}""")
+            )
+                .andExpect(status().isBadRequest)
+                .andExpect(jsonPath("$.errors[0].field").value("authors[0].birthDate"))
+
+            verifyNoInteractions(bookUpdateService)
+        }
+
+        @Test
+        @DisplayName("authorIdとname・birthDateを同時に指定した場合、書籍更新は行わず400 Bad Requestを返す")
+        fun `update returns 400 when an author specifies both authorId and name-birthDate`() {
+            mockMvc.perform(
+                patch("/api/v1/books/10")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"authors":[{"authorId":1,"name":"誰か","birthDate":"2000-01-01"}]}""")
+            )
+                .andExpect(status().isBadRequest)
+
+            verifyNoInteractions(bookUpdateService)
+        }
+
+        @Test
+        @DisplayName("対象のbookIdの書籍が存在しない場合、404 Not Foundを返す")
+        fun `update returns 404 when the book does not exist`() {
+            `when`(
+                bookUpdateService.update(
+                    id = BookId(999L),
+                    title = "改訂版",
+                    price = null,
+                    publicationStatus = null,
+                    authorSpecs = null,
+                )
+            ).thenThrow(BookNotFoundException(BookId(999L)))
+
+            mockMvc.perform(
+                patch("/api/v1/books/999")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"title":"改訂版"}""")
+            )
+                .andExpect(status().isNotFound)
+        }
+
+        @Test
+        @DisplayName("存在しないauthorIdが指定された場合、404 Not Foundを返す")
+        fun `update returns 404 when authorId does not exist`() {
+            `when`(
+                bookUpdateService.update(
+                    id = BookId(10L),
+                    title = null,
+                    price = null,
+                    publicationStatus = null,
+                    authorSpecs = listOf(AuthorSpec.Existing(AuthorId(999L))),
+                )
+            ).thenThrow(AuthorNotFoundException(AuthorId(999L)))
+
+            mockMvc.perform(
+                patch("/api/v1/books/10")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"authors":[{"authorId":999}]}""")
+            )
+                .andExpect(status().isNotFound)
+        }
+
+        @Test
+        @DisplayName("新規著者として指定されたname・birthDateが既存著者と重複する場合、409 Conflictを返す")
+        fun `update returns 409 when a new author duplicates an existing one`() {
+            `when`(
+                bookUpdateService.update(
+                    id = BookId(10L),
+                    title = null,
+                    price = null,
+                    publicationStatus = null,
+                    authorSpecs = listOf(AuthorSpec.New(name = "夏目漱石", birthDate = LocalDate.of(1867, 2, 9))),
+                )
+            ).thenThrow(DuplicateAuthorException("夏目漱石", LocalDate.of(1867, 2, 9)))
+
+            mockMvc.perform(
+                patch("/api/v1/books/10")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"authors":[{"name":"夏目漱石","birthDate":"1867-02-09"}]}""")
+            )
+                .andExpect(status().isConflict)
+        }
+
+        @Test
+        @DisplayName("publicationStatusをPUBLISHEDからUNPUBLISHEDに変更しようとした場合、409 Conflictを返す")
+        fun `update returns 409 when changing publicationStatus from PUBLISHED to UNPUBLISHED`() {
+            `when`(
+                bookUpdateService.update(
+                    id = BookId(10L),
+                    title = null,
+                    price = null,
+                    publicationStatus = PublicationStatus.UNPUBLISHED,
+                    authorSpecs = null,
+                )
+            ).thenThrow(InvalidPublicationStatusTransitionException(PublicationStatus.PUBLISHED, PublicationStatus.UNPUBLISHED))
+
+            mockMvc.perform(
+                patch("/api/v1/books/10")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"publicationStatus":"UNPUBLISHED"}""")
             )
                 .andExpect(status().isConflict)
         }
