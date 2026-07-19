@@ -18,7 +18,7 @@ class BookRegistrationService(
         price: BigDecimal,
         publicationStatus: PublicationStatus,
         authorSpecs: List<AuthorSpec>,
-    ): RegisteredBook {
+    ): BookWithAuthors {
         val authors = authorSpecResolver.resolve(authorSpecs)
         val book = Book.register(
             title = title,
@@ -27,6 +27,6 @@ class BookRegistrationService(
             authorIds = authors.map { requireNotNull(it.id) },
         )
         val savedBook = bookRepository.save(book)
-        return RegisteredBook(savedBook, authors)
+        return BookWithAuthors(savedBook, authors)
     }
 }

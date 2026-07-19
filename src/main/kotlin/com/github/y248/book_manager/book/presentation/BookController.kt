@@ -1,18 +1,22 @@
 package com.github.y248.book_manager.book.presentation
 
+import com.github.y248.book_manager.author.domain.AuthorId
 import com.github.y248.book_manager.book.application.AuthorSpec
 import com.github.y248.book_manager.book.application.BookRegistrationService
+import com.github.y248.book_manager.book.application.BookSearchService
 import com.github.y248.book_manager.book.application.BookUpdateService
 import com.github.y248.book_manager.book.domain.BookId
 import com.github.y248.book_manager.book.domain.PublicationStatus
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
+import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 
 @RestController
@@ -20,7 +24,14 @@ import org.springframework.web.bind.annotation.RestController
 class BookController(
     private val bookRegistrationService: BookRegistrationService,
     private val bookUpdateService: BookUpdateService,
+    private val bookSearchService: BookSearchService,
 ) {
+    @GetMapping
+    fun search(@RequestParam authorId: Long): BooksResponse {
+        val results = bookSearchService.findByAuthorId(AuthorId(authorId))
+        return BooksResponse(books = results.map { BookResponse.from(it.book, it.authors) })
+    }
+
     @PostMapping
     fun register(@Valid @RequestBody request: RegisterBookRequest): ResponseEntity<BookResponse> {
         val authorSpecs = requireNotNull(request.authors).map { AuthorSpec.of(it.authorId, it.name, it.birthDate) }
