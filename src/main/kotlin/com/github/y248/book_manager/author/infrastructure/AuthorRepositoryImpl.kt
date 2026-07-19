@@ -49,6 +49,25 @@ class AuthorRepositoryImpl(
         )
     }
 
+    override fun findAllByIds(ids: List<AuthorId>): List<Author> {
+        if (ids.isEmpty()) return emptyList()
+
+        val records = dsl.select(AUTHORS.ID, AUTHORS.NAME, AUTHORS.BIRTH_DATE, AUTHORS.CREATED_AT, AUTHORS.UPDATED_AT)
+            .from(AUTHORS)
+            .where(AUTHORS.ID.`in`(ids.map { it.value }))
+            .fetch()
+
+        return records.map { record ->
+            Author.reconstruct(
+                id = AuthorId(requireNotNull(record.get(AUTHORS.ID))),
+                name = requireNotNull(record.get(AUTHORS.NAME)),
+                birthDate = requireNotNull(record.get(AUTHORS.BIRTH_DATE)),
+                createdAt = requireNotNull(record.get(AUTHORS.CREATED_AT)),
+                updatedAt = requireNotNull(record.get(AUTHORS.UPDATED_AT)),
+            )
+        }
+    }
+
     override fun save(author: Author): Author {
         val record = try {
             dsl.insertInto(AUTHORS)
