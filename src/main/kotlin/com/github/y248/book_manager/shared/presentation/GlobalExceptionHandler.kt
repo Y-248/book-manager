@@ -1,5 +1,6 @@
 package com.github.y248.book_manager.shared.presentation
 
+import com.github.y248.book_manager.author.domain.AuthorNotFoundException
 import com.github.y248.book_manager.author.domain.DuplicateAuthorException
 import jakarta.servlet.http.HttpServletRequest
 import org.springframework.http.HttpStatus
@@ -41,6 +42,20 @@ class GlobalExceptionHandler {
             path = request.requestURI,
         )
         return ResponseEntity.status(HttpStatus.CONFLICT).body(body)
+    }
+
+    @ExceptionHandler(AuthorNotFoundException::class)
+    fun handleAuthorNotFound(
+        exception: AuthorNotFoundException,
+        request: HttpServletRequest,
+    ): ResponseEntity<ErrorResponse> {
+        val body = ErrorResponse(
+            status = HttpStatus.NOT_FOUND.value(),
+            error = HttpStatus.NOT_FOUND.reasonPhrase,
+            message = exception.message ?: "Not Found",
+            path = request.requestURI,
+        )
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body)
     }
 
     /**
