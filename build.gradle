@@ -50,6 +50,7 @@ dependencies {
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 	testAnnotationProcessor 'org.projectlombok:lombok'
 	jooqCodegen 'org.postgresql:postgresql:42.7.11'
+	implementation "org.jetbrains.kotlin:kotlin-stdlib"
 }
 
 kotlin {
@@ -116,4 +117,9 @@ tasks.named('compileKotlin') {
 
 tasks.named('test') {
 	useJUnitPlatform()
+	testLogging {
+		events 'passed', 'skipped', 'failed'
+		exceptionFormat = 'full'
+		showStandardStreams = false
+	}
 }
