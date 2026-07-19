@@ -41,6 +41,39 @@ class BookRepositoryImpl(
         )
     }
 
+    override fun findAllByAuthorId(authorId: AuthorId): List<Book> {
+        val bookIds = dsl.select(BOOK_AUTHOR_RELATIONS.BOOK_ID)
+            .from(BOOK_AUTHOR_RELATIONS)
+            .where(BOOK_AUTHOR_RELATIONS.AUTHOR_ID.eq(authorId.value))
+            .fetch(BOOK_AUTHOR_RELATIONS.BOOK_ID)
+            .filterNotNull()
+        if (bookIds.isEmpty()) return emptyList()
+
+        val bookRecords = dsl.select(BOOKS.ID, BOOKS.TITLE, BOOKS.PRICE, BOOKS.PUBLICATION_STATUS, BOOKS.CREATED_AT, BOOKS.UPDATED_AT)
+            .from(BOOKS)
+            .where(BOOKS.ID.`in`(bookIds))
+            .fetch()
+
+        val authorIdsByBookId = dsl.select(BOOK_AUTHOR_RELATIONS.BOOK_ID, BOOK_AUTHOR_RELATIONS.AUTHOR_ID)
+            .from(BOOK_AUTHOR_RELATIONS)
+            .where(BOOK_AUTHOR_RELATIONS.BOOK_ID.`in`(bookIds))
+            .fetch()
+            .groupBy({ requireNotNull(it.get(BOOK_AUTHOR_RELATIONS.BOOK_ID)) }, { requireNotNull(it.get(BOOK_AUTHOR_RELATIONS.AUTHOR_ID)) })
+
+        return bookRecords.map { record ->
+            val id = requireNotNull(record.get(BOOKS.ID))
+            Book.reconstruct(
+                id = BookId(id),
+                title = requireNotNull(record.get(BOOKS.TITLE)),
+                price = requireNotNull(record.get(BOOKS.PRICE)),
+                publicationStatus = PublicationStatus.valueOf(requireNotNull(record.get(BOOKS.PUBLICATION_STATUS))),
+                authorIds = authorIdsByBookId[id].orEmpty().map { AuthorId(it) },
+                createdAt = requireNotNull(record.get(BOOKS.CREATED_AT)),
+                updatedAt = requireNotNull(record.get(BOOKS.UPDATED_AT)),
+            )
+        }
+    }
+
     override fun save(book: Book): Book {
         val bookRecord = dsl.insertInto(BOOKS)
             .set(BOOKS.TITLE, book.title)
