@@ -1,3 +1,6 @@
 spring:
   application:
     name: book-manager
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
