@@ -2,6 +2,10 @@
 
 書籍とその著者を管理するアプリケーション。DDD（domain/application/infrastructure/presentation）構成のSpring Boot + Kotlin + jOOQ + Flyway製REST API。
 
+API仕様書は[こちら](https://github.com/Y-248/book-manager/issues/2#issuecomment-5014823041)
+
+DB仕様書は[こちら](https://github.com/Y-248/book-manager/issues/1#issuecomment-5014721122)
+
 ## API一覧
 
 | メソッド | パス | 概要 |
